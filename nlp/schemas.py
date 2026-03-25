@@ -1,118 +1,110 @@
 """
-nlp/schemas.py
-Pydantic request and response models for the FastAPI endpoint.
-Validation happens automatically before any route handler runs.
+schemas.py — updated with Q&A and SHAP schemas
+Add these to your existing schemas.py
 """
 
-from pydantic import BaseModel, Field, field_validator
-from typing import Annotated
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict
 
-
-# ── Shared types ──────────────────────────────────────────────────────────────
-
-QueryStr = Annotated[
-    str,
-    Field(
-        min_length=3,
-        max_length=512,
-        description="Natural language operator query to classify.",
-        examples=["what happens to air quality on Wilshire if we cap speeds at 20mph?"],
-    ),
-]
-
-
-# ── Request models ────────────────────────────────────────────────────────────
 
 class PredictRequest(BaseModel):
-    query: QueryStr
-
-    @field_validator("query")
-    @classmethod
-    def strip_and_check(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("query must not be empty or whitespace only.")
-        return v
-
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {"query": "what happens to air quality on Wilshire if we cap speeds at 20mph?"}
-            ]
-        }
-    }
-
-
-class BatchPredictRequest(BaseModel):
-    queries: list[QueryStr] = Field(
-        min_length=1,
-        description="List of queries to classify in a single batch (max 32).",
-    )
-
-    @field_validator("queries")
-    @classmethod
-    def strip_each(cls, v: list[str]) -> list[str]:
-        return [q.strip() for q in v if q.strip()]
-
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {
-                    "queries": [
-                        "what if we charge drivers to enter downtown during rush hour?",
-                        "close the northbound lane on the 405 for maintenance on Saturday",
-                        "double bus frequency on Vermont Ave and show emission change",
-                    ]
-                }
-            ]
-        }
-    }
-
-
-# ── Response models ───────────────────────────────────────────────────────────
+    query: str = Field(..., min_length=5, max_length=512)
 
 class PredictResponse(BaseModel):
-    query: str = Field(description="The original query string.")
-    label: str = Field(description="Predicted policy intervention label.")
-    confidence: float = Field(
-        ge=0.0, le=1.0,
-        description="Softmax probability of the predicted label (0–1).",
-    )
-    probabilities: dict[str, float] = Field(
-        description="Full softmax distribution across all five labels."
-    )
-    latency_ms: float = Field(description="Inference time in milliseconds.")
-    low_confidence: bool = Field(
-        default=False,
-        description=(
-            "True if confidence is below the LOW_CONFIDENCE_THRESHOLD (0.80). "
-            "The LangChain layer can use this to ask the operator for clarification."
-        ),
-    )
+    query:          str
+    label:          str
+    confidence:     float
+    probabilities:  Dict[str, float]
+    latency_ms:     float
+    low_confidence: bool = False
 
-    def model_post_init(self, __context) -> None:
-        from nlp.config import LOW_CONFIDENCE_THRESHOLD
-        # Set low_confidence flag after all fields are initialised
-        object.__setattr__(self, "low_confidence", self.confidence < LOW_CONFIDENCE_THRESHOLD)
-
+class BatchPredictRequest(BaseModel):
+    queries: List[str]
 
 class BatchPredictResponse(BaseModel):
-    predictions: list[PredictResponse] = Field(
-        description="One prediction per query, in the same order as the request."
-    )
-    total_latency_ms: float = Field(
-        description="Total wall-clock time for the entire batch in milliseconds."
-    )
-
+    predictions:      List[PredictResponse]
+    total_latency_ms: float
 
 class HealthResponse(BaseModel):
-    status: str = Field(description="'ok' if model is loaded and ready.")
-    model_dir: str = Field(description="Path to the loaded model checkpoint.")
-    labels: list[str] = Field(description="Label vocabulary in ID order.")
-    device: str = Field(description="Compute device: 'cuda' or 'cpu'.")
-
+    status:    str
+    model_dir: str
+    labels:    List[str]
+    device:    str
 
 class LabelsResponse(BaseModel):
-    labels: dict[str, int] = Field(
-        description="Label name → integer ID mapping (matches training config)."
+    labels: Dict[str, int]
+# ════════════════════════════════════════════════
+# Q&A Layer Schemas
+# ════════════════════════════════════════════════
+
+
+
+
+class QARequest(BaseModel):
+    question: str = Field(
+        ...,
+        example="What are the traffic impact projections for Zone 4?",
+        description="Natural language question about city reports or simulations",
     )
+    explain: bool = Field(
+        default=False,
+        description="If true, also returns SHAP token-level explanation for the answer",
+    )
+
+
+class QASource(BaseModel):
+    source: str          # filename the chunk came from
+    snippet: str         # first 200 chars of the retrieved chunk
+
+
+class QAResponse(BaseModel):
+    question: str
+    answer: str
+    sources: List[QASource]
+    explanation: Optional[dict] = None   # populated when explain=True
+
+
+# ════════════════════════════════════════════════
+# SHAP Explainability Schemas
+# ════════════════════════════════════════════════
+
+class ExplainPolicyRequest(BaseModel):
+    text: str = Field(
+        ...,
+        example="Approve new zoning for residential development in sector 7.",
+        description="Policy text to explain",
+    )
+
+
+class TokenSHAP(BaseModel):
+    token:      str
+    shap_value: float
+
+
+class PolicyPrediction(BaseModel):
+    label:      str
+    confidence: float
+
+
+class ExplainPolicyResponse(BaseModel):
+    prediction:        PolicyPrediction
+    all_class_scores:  Dict[str, float]
+    top_tokens:        List[TokenSHAP]    # top 15 most influential tokens
+    base_value:        float
+    explanation:       str                # human-readable summary
+
+
+class ExplainQARequest(BaseModel):
+    question: str
+    context:  str = Field(
+        ...,
+        description="Retrieved context snippet the answer was drawn from",
+    )
+
+
+class TokenImportanceRequest(BaseModel):
+    text: str
+
+
+class TokenImportanceResponse(BaseModel):
+    tokens: List[Dict]   # [{token, importance_per_class: {label: shap_val}}]

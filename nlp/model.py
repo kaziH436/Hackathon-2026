@@ -18,7 +18,7 @@ import torch.nn.functional as F
 from pathlib import Path
 from transformers import AutoTokenizer, BertForSequenceClassification
 
-from nlp.config import LABELS, MAX_LENGTH
+from config import LABELS, MAX_LENGTH
 
 
 class PolicyClassifier:

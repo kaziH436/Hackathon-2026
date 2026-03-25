@@ -31,8 +31,9 @@ from contextlib import asynccontextmanager
 import logging
 import time
 
-from nlp.model import PolicyClassifier
-from nlp.schemas import (
+from model import PolicyClassifier
+from routers.nlp_router import router as nlp_router
+from schemas import (
     PredictRequest,
     PredictResponse,
     BatchPredictRequest,
@@ -40,7 +41,7 @@ from nlp.schemas import (
     HealthResponse,
     LabelsResponse,
 )
-from nlp.config import MODEL_DIR, LABELS, MAX_BATCH_SIZE
+from config import MODEL_DIR, LABELS, MAX_BATCH_SIZE
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -59,6 +60,17 @@ async def lifespan(app: FastAPI):
     classifier = PolicyClassifier(MODEL_DIR)
     elapsed = time.perf_counter() - t0
     logger.info(f"Model loaded in {elapsed:.2f}s — ready to serve.")
+    
+    logger.info("Loading LangChain QA chain ...")
+    from qa_chain import get_qa_chain
+    get_qa_chain()
+    logger.info("QA chain ready")
+
+    logger.info("Loading SHAP explainer ...")
+    from shap_explainer import get_shap_explainer
+    get_shap_explainer()
+    logger.info("SHAP ready")
+    
     yield
     # Cleanup on shutdown
     classifier = None
@@ -203,3 +215,5 @@ def predict_batch(request: BatchPredictRequest) -> BatchPredictResponse:
         predictions=predictions,
         total_latency_ms=round(latency_ms, 2),
     )
+
+app.include_router(nlp_router, prefix="/api/v1/nlp", tags=["NLP"])
