@@ -2,7 +2,6 @@
 
 A hackathon prototype for exploring urban mobility, air quality, and energy indicators through a React dashboard, with a Python NLP service for policy classification, dataset question answering, and token-level explanations.
 
-> **Prototype status:** The dashboard currently renders local demonstration data and its map is a visual placeholder. It does not call the NLP API or load the repository's CSV/GeoJSON files. The API and dashboard are separate components; connecting them is future integration work.
 
 ## Features
 
